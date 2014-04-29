@@ -2,6 +2,7 @@
 ===============================================================================
 |     Tufts University EE31 Junior Design Project                             |
 |     Created by Ryan Dougherty, Nick Andre, Bryan Zhang                      |
+|     Partner team: Brad Frizzell, Stephen Panero, Cody Chen                  |
 ===============================================================================
 */
 
@@ -29,6 +30,8 @@
 #define RSWINGL 7 // reverse swing left
 #define REVERSE 8 // go backward
 
+#define MOTOR_OFFSET 0
+
 // Speed
 #define SLOW 60 
 #define MEDIUM 75
@@ -54,7 +57,7 @@
 #define BLUE 2
 
 // State Constants
-#define COUNTER_LENGTH 10
+#define COUNTER_LENGTH 14
 #define MAX_RUNTIME 5000
 
 //------------------------ COLLISION CONSTANTS --------------------------------
@@ -141,8 +144,6 @@ const byte DONE_MSG = 125;
 const byte RECEIVED = 65;
 const byte NO_MESSAGE = 5;
 
-
-
 //--------------------------- Color variables ---------------------------------
 
 int color;
@@ -165,7 +166,7 @@ int stopTheMadness;
 //--------------------------- State variables ---------------------------------
 
 int counter;
-int rotateTime = 10;
+int rotateTime = 8;
 volatile int state;
 volatile bool masterSlave;
 volatile bool startedSlave;
@@ -210,17 +211,17 @@ void setup() {
   pinMode(MASTER_SLAVE_PIN,INPUT);
   masterSlave = digitalRead(MASTER_SLAVE_PIN) == HIGH;
 
-  //beMaster();
-
+  // REal version
   // if(masterSlave == MASTER){
   //   state = GO_UNTIL_COLLIDE;
   // }else{
   //   startedSlave = true;
   // }
 
+  // Hard coded
   masterSlave = MASTER;
-
   state = GO_UNTIL_COLLIDE;
+
   previousState = HALT;
 
   // motor setup
@@ -245,7 +246,6 @@ void setup() {
   // Interrupt Setup for color
   Timer1.initialize(25000); //10 milliseconds
   Timer1.attachInterrupt(colorMeasure);
-  
 
   // Collision setup
   stopTheMadness = 0;
@@ -262,13 +262,11 @@ void setup() {
 // then move according to state
 void loop() { 
   if(masterSlave == SLAVE){
-    Serial.println("dafuq");
     state = HALT;
     beSlave();
     state = GO_UNTIL_COLLIDE;
     masterSlave = MASTER;
   }
-
 
   // Prevent collision hardware issues
   if(collide){
@@ -358,24 +356,6 @@ void colorMeasure() {
 // Updates the state of the machine according to the color sensor
 void checkstate(){
   switch (state){
-    // Wait until the other bot finds color
-    // case WAIT_UNTIL_COLOR:
-    //   if(!wait){
-    //     state = WAIT_UNTIL_DONE;
-    //   }
-    //   break;
-
-    // // Wait until the other bot finishes the course
-    // case WAIT_UNTIL_DONE:
-    //   if(!wait){
-    //     if(state == SLAVE){
-    //       state = GO_UNTIL_COLLIDE;
-    //     }else{
-    //       state = DONESTATE;
-    //     }
-    //   }
-    //   break;
-
     // Move forward until you hit a wall
     case GO_UNTIL_COLLIDE:
       //only transitions out via interrupt
@@ -383,7 +363,6 @@ void checkstate(){
 
     // Just hit the wall, now looking for RED or BLUE
     case HUNTING_FOR_COLOR:
-      //Serial.println("Hunting");
       if(colorValue() == RED){
         counter = 0;
         state = FOUND_RED_FIRST;
@@ -397,32 +376,24 @@ void checkstate(){
 
     // Communicate that RED was found, then start tracking RED
     case FOUND_RED_FIRST:
-      //Serial.println("Found red state");
-      //colorFound(RED_COLOR);
+      colorFound(RED_COLOR);
       state = TURN_RED_RIGHT;
       break;
     
     // Communicate that BLUE was found, then start tracking BLUE
     case FOUND_BLUE_FIRST:
-   // Serial.println("Found blue state");
-      //colorFound(BLUE_COLOR);
+      colorFound(BLUE_COLOR);
       state = TURN_BLUE_LEFT;
       break;
 
     case TURN_BLUE_LEFT:
-      if(counter < rotateTime){
-        counter++;
-      }else{
-        counter = 0;
+      if(colorValue() == BLUE){
         state = FOUND_BLUE;
       }
       break;
 
     case TURN_RED_RIGHT:
-      if(counter < rotateTime){
-        counter++;
-      }else{
-        counter = 0;
+      if(colorValue() == DARK){
         state = FOUND_RED;
       }
       break;
@@ -468,9 +439,7 @@ void checkstate(){
         counter ++;
         state = RLOST_BLUE;
       }else{
-       
-          state = DONESTATE;
-        
+        state = DONESTATE;
       }
       break;
 
@@ -491,7 +460,7 @@ void checkstate(){
     case RLOST_RED:
       if(colorValue() == RED){
         state = FOUND_RED;
-      } else if(counter < COUNTER_LENGTH * 2){
+      } else if(counter < COUNTER_LENGTH * 2 + 2){
         counter ++;
         state = RLOST_RED;
       }else{
@@ -501,16 +470,22 @@ void checkstate(){
     
     // Just hit the wall at the end of the BLUE track, turning around
     case TURN_AROUND_BLUE:
+      if(colorValue() == BLUE){
+        state = FOUND_BLUE;
+      }
       if(counter > rotateTime){
-        state = LLOST_BLUE;
+        state = FOUND_BLUE;
       }
       counter++;
       break;
     
     // Just hit the wall at the end of the RED track, turning around
     case TURN_AROUND_RED:
+      if(colorValue() == RED){
+        state = FOUND_RED;
+      }
       if(counter > rotateTime){
-        state = LLOST_RED;
+        state = FOUND_RED;
       }
       counter++;
       break;
@@ -521,8 +496,7 @@ void checkstate(){
         state = OVER;
         counter = 0;
       }
-      else
-      {
+      else{
         masterSlave = SLAVE;
         finishedMaster();
         beSlave();
@@ -567,10 +541,10 @@ void move(){
       setMotors(FORWARD, SLOW);
       break;
     case LLOST_BLUE:
-      setMotors(ROTATEL, SLOW);
+      setMotors(ROTATER, SLOW);
       break;
     case RLOST_BLUE:
-      setMotors(ROTATER,SLOW);
+      setMotors(ROTATEL,SLOW);
       break;
     case LLOST_RED:
       setMotors(ROTATEL, SLOW);
@@ -579,16 +553,16 @@ void move(){
       setMotors(ROTATER,SLOW);
       break;
     case TURN_AROUND_BLUE:
-      setMotors(ROTATER, FAST);
+      setMotors(ROTATEL, FAST);
       break;
     case TURN_AROUND_RED:
       setMotors(ROTATEL, FAST);
       break;
     case TURN_RED_RIGHT:
-      setMotors(ROTATER, FAST);
+      setMotors(ROTATEL, SLOW);
       break;
     case TURN_BLUE_LEFT:
-      setMotors(ROTATEL, FAST);
+      setMotors(ROTATER, SLOW);
       break;
     // covers halt, wait, and communications states
     default:
@@ -605,7 +579,7 @@ void setMotors(int i, int v) {
     case FORWARD:
       analogWrite(MTRLFWD,v);
       analogWrite(MTRLREV,0);
-      analogWrite(MTRRFWD,v);
+      analogWrite(MTRRFWD,v + MOTOR_OFFSET);
       analogWrite(MTRRREV,0);
       digitalWrite(MTRREN,HIGH);
       digitalWrite(MTRLEN,HIGH);
@@ -732,15 +706,15 @@ void communicateCollision(){
  
 // reposition according to pad that was hit, and the last time you were hit
 void reposition(){
-  // Serial.print("reposition, state: ");Serial.println(state);
-  // Serial.print("numInts:"); Serial.println(numInts);
-  // Serial.print("debounceTimer: ");Serial.println(debounceTimer);
+
   switch(state){  
     case PAD0: 
-      //Serial.print("PAD HIT");
       setMotors(REVERSE,MEDIUM);
       if(timeOut()){
-        collisionTimeout = 1000;
+        collisionTimeout = 1250;
+        if(previousState == GO_UNTIL_COLLIDE){
+          collisionTimeout = 1250;
+        }
         collisionTimer = millis();
         state = PAD0_STATE2;
       }
