@@ -46,8 +46,9 @@
 #define REDSTATE 1
 
 // Constants
-#define DARK_THRESHOLD 175  // Change this based on environment
-#define BLUE_DIFFERENCE 700
+#define BLUE_THRESHOLD 400  // Change this based on environment
+#define BLUE_DIFFERENCE 450
+#define RED_THRESHOLD 80
 #define DARK 0
 #define RED 1
 #define BLUE 2
@@ -98,6 +99,8 @@
 #define COMMUNICATE_COLOR 15
 #define DONESTATE 16
 #define OVER 17
+#define TURN_RED_RIGHT 18
+#define TURN_BLUE_LEFT 19
 
 //--------------------------- MUSIC CONSTANTS ---------------------------------
 
@@ -207,6 +210,8 @@ void setup() {
   pinMode(MASTER_SLAVE_PIN,INPUT);
   masterSlave = digitalRead(MASTER_SLAVE_PIN) == HIGH;
 
+  //beMaster();
+
   // if(masterSlave == MASTER){
   //   state = GO_UNTIL_COLLIDE;
   // }else{
@@ -215,7 +220,7 @@ void setup() {
 
   masterSlave = MASTER;
 
-  state = HALT;
+  state = GO_UNTIL_COLLIDE;
   previousState = HALT;
 
   // motor setup
@@ -238,7 +243,7 @@ void setup() {
   currentColorMeasurement = DARK;
 
   // Interrupt Setup for color
-  Timer1.initialize(10000); //10 milliseconds
+  Timer1.initialize(25000); //10 milliseconds
   Timer1.attachInterrupt(colorMeasure);
   
 
@@ -249,7 +254,6 @@ void setup() {
   collisionTimeout = 0;
   collide = false;
   attachInterrupt(0, collision, RISING); // Interrupt 0 pin 2
-
 }
 
 // ============================== Main Loop ===================================
@@ -257,53 +261,49 @@ void setup() {
 // While not in the halting state, update the state with the sensors
 // then move according to state
 void loop() { 
-  //song();
-  beSlave();
-  //colorFound(RED_COLOR);
-  delay(1000000000);
+  if(masterSlave == SLAVE){
+    Serial.println("dafuq");
+    state = HALT;
+    beSlave();
+    state = GO_UNTIL_COLLIDE;
+    masterSlave = MASTER;
+  }
+
+
+  // Prevent collision hardware issues
+  if(collide){
+    stopTheMadness++;
+  }
+  if(stopTheMadness > THIS_IS_MADNESS){
+    endCollide();
+    stopTheMadness = 0;
+  }
+
+  // If colliding, reposition
+  if(collide == true && state != HALT && state != OVER){
+    reposition();
+  } 
   
-  // if(masterSlave == SLAVE){
+  // If not colliding, move according to state
+  if(collide == false){
+ //   color = colorValue();
+    checkstate();
+    move();
+  }
+
+  // End program after max runtime
+  // if (millis() > MAX_RUNTIME){
   //   state = HALT;
-  //   beSlave();
-  //   state = GO_UNTIL_COLLIDE;
-  //   masterSlave = MASTER;
   // }
 
-
-  // // Prevent collision hardware issues
-  // if(collide){
-  //   stopTheMadness++;
-  // }
-  // if(stopTheMadness > THIS_IS_MADNESS){
-  //   endCollide();
-  //   stopTheMadness = 0;
-  // }
-
-  // // If colliding, reposition
-  // if(collide == true && state != HALT && state != OVER){
-  //   reposition();
-  // } 
-  
-  // // If not colliding, move according to state
-  // if(collide == false){
-  //   color = colorValue();
-  //   checkstate();
-  //   move();
-  // }
-
-  // // End program after max runtime
-  // // if (millis() > MAX_RUNTIME){
-  // //   state = HALT;
-  // // }
-
-  // delay(40); // DO NOT ERASE
+  delay(40); // DO NOT ERASE
 
   // For debug purposes
-  
-  // Serial.print("current color: ");Serial.println(color);
-  // Serial.print("current state: ");Serial.println(state);
-  // Serial.println("color: ");Serial.println(currentColorMeasurement);
-  // Serial.print("Color Value: ");Serial.println(color);
+  color = colorValue();
+  Serial.print("current color: ");Serial.println(color);
+   //Serial.print("current state: ");Serial.println(state);
+   //Serial.println("color: ");Serial.println(currentColorMeasurement);
+   //Serial.print("Color Value: ");Serial.println(color);
 
 }
 
@@ -311,16 +311,22 @@ void loop() {
 
 // Return current color value
 int colorValue() {
- // Serial.println(color);
+  //Serial.println(analogRead(LIGHTSENSOR));
+ // Serial.println(colorState);
+
+  if (lastColorMeasurement != currentColorMeasurement) {
+    return lastColorReturned;
+  }
+  
   if (currentColorMeasurement == RED) {
-    // Serial.println(RED);
-    return RED;
+    //Serial.println(RED);
+    return (lastColorReturned = RED);
   } else if (currentColorMeasurement == BLUE) {
-    // Serial.println(BLUE);
-    return BLUE;
+    //Serial.println(BLUE);
+    return (lastColorReturned = BLUE);
   } else {
-    // Serial.println(DARK);
-    return DARK;
+    //Serial.println(DARK);
+    return (lastColorReturned = DARK);
   }
 }
 
@@ -329,12 +335,12 @@ void colorMeasure() {
   if (colorState == BLUESTATE) {
     lastColorMeasurement = currentColorMeasurement;
     blueValue = analogRead(LIGHTSENSOR);
-    if (blueValue < DARK_THRESHOLD && redValue < DARK_THRESHOLD) {
-      currentColorMeasurement = DARK;  
-    } else if (blueValue > DARK_THRESHOLD && redValue > DARK_THRESHOLD) {
-      currentColorMeasurement = RED;
-    } else if(blueValue - redValue > BLUE_DIFFERENCE){
+    if(blueValue > BLUE_THRESHOLD) {
       currentColorMeasurement = BLUE;
+    }else if (redValue > RED_THRESHOLD) {
+      currentColorMeasurement = RED;
+    } else {
+      currentColorMeasurement = DARK;
     }
     digitalWrite(REDLED,HIGH);
     digitalWrite(BLUELED,LOW);
@@ -378,10 +384,10 @@ void checkstate(){
     // Just hit the wall, now looking for RED or BLUE
     case HUNTING_FOR_COLOR:
       //Serial.println("Hunting");
-      if(color == RED){
+      if(colorValue() == RED){
         counter = 0;
         state = FOUND_RED_FIRST;
-      } else if(color == BLUE){
+      } else if(colorValue() == BLUE){
         counter = 0;
         state = FOUND_BLUE_FIRST;
       } else{
@@ -392,20 +398,38 @@ void checkstate(){
     // Communicate that RED was found, then start tracking RED
     case FOUND_RED_FIRST:
       //Serial.println("Found red state");
-      colorFound(RED_COLOR);
-      state = FOUND_RED;
+      //colorFound(RED_COLOR);
+      state = TURN_RED_RIGHT;
       break;
     
     // Communicate that BLUE was found, then start tracking BLUE
     case FOUND_BLUE_FIRST:
    // Serial.println("Found blue state");
-      colorFound(BLUE_COLOR);
-      state = FOUND_BLUE;
+      //colorFound(BLUE_COLOR);
+      state = TURN_BLUE_LEFT;
+      break;
+
+    case TURN_BLUE_LEFT:
+      if(counter < rotateTime){
+        counter++;
+      }else{
+        counter = 0;
+        state = FOUND_BLUE;
+      }
+      break;
+
+    case TURN_RED_RIGHT:
+      if(counter < rotateTime){
+        counter++;
+      }else{
+        counter = 0;
+        state = FOUND_RED;
+      }
       break;
 
     // Seeing RED
     case FOUND_RED:
-      if(color == RED){
+      if(colorValue() == RED){
         state = FOUND_RED;
       }else{
         counter = 0;
@@ -415,7 +439,7 @@ void checkstate(){
 
     // Seeing BLUE
     case FOUND_BLUE:
-      if(color == BLUE){
+      if(colorValue() == BLUE){
         state = FOUND_BLUE;
       } else {
         counter = 0;
@@ -425,7 +449,7 @@ void checkstate(){
 
     // Just lost BLUE, turning left 
     case LLOST_BLUE:
-      if(color == BLUE){
+      if(colorValue() == BLUE){
         state = FOUND_BLUE;
       }else if(counter < COUNTER_LENGTH){
         counter ++;
@@ -438,7 +462,7 @@ void checkstate(){
 
     // Failed to find blue turning left, turning right instead
     case RLOST_BLUE:
-      if(color == BLUE){
+      if(colorValue() == BLUE){
         state = FOUND_BLUE;
       } else if(counter < COUNTER_LENGTH * 2){
         counter ++;
@@ -452,7 +476,7 @@ void checkstate(){
 
       // Just lost RED, turning left
       case LLOST_RED:
-      if(color == RED){
+      if(colorValue() == RED){
         state = FOUND_RED;
       }else if(counter < COUNTER_LENGTH){
         counter ++;
@@ -465,7 +489,7 @@ void checkstate(){
 
     // Failed to find RED turning left, turning right instead
     case RLOST_RED:
-      if(color == RED){
+      if(colorValue() == RED){
         state = FOUND_RED;
       } else if(counter < COUNTER_LENGTH * 2){
         counter ++;
@@ -558,6 +582,12 @@ void move(){
       setMotors(ROTATER, FAST);
       break;
     case TURN_AROUND_RED:
+      setMotors(ROTATEL, FAST);
+      break;
+    case TURN_RED_RIGHT:
+      setMotors(ROTATER, FAST);
+      break;
+    case TURN_BLUE_LEFT:
       setMotors(ROTATEL, FAST);
       break;
     // covers halt, wait, and communications states
@@ -881,6 +911,13 @@ void colorFound(int foundColor){
   }
 }
 
+void beMaster()
+{
+  colorFound(RED_COLOR);
+  lightLED(RED_COLOR);
+
+}
+
  void finishedMaster(){
   for (; ; ) {
     mask();
@@ -922,9 +959,9 @@ void beSlave() {
   Serial.print("Received message:");
   Serial.println(m);
 
-  for (int i = 0; i < 100; i++) {
-  pingBack();
-}
+  for (int i = 0; i < 50; i++) {
+    pingBack();
+  }
 
   if(m == BLUE_FOUND){
     lightLED(BLUE_COLOR); 
@@ -967,6 +1004,7 @@ byte receiveMessage() {
 }
 
 boolean isValid(byte msg) {
+  if (msg != 0) Serial.println(msg);
   return ((msg == BLUE_FOUND) || (msg == RED_FOUND) || (msg == DONE_MSG) || (msg == RECEIVED));
 }
 
