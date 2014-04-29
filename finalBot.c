@@ -2,7 +2,7 @@
 ===============================================================================
 |     Tufts University EE31 Junior Design Project                             |
 |     Created by Ryan Dougherty, Nick Andre, Bryan Zhang                      |
-|     Partner team: Brad Frizzell, Stephen Panero, Cody Chen                  |
+|     Partner team: Brad Frizzell, Stephen Panaro, Cody Chen                  |
 ===============================================================================
 */
 
@@ -211,17 +211,16 @@ void setup() {
   pinMode(MASTER_SLAVE_PIN,INPUT);
   masterSlave = digitalRead(MASTER_SLAVE_PIN) == HIGH;
 
-  // REal version
-  // if(masterSlave == MASTER){
-  //   state = GO_UNTIL_COLLIDE;
-  // }else{
-  //   startedSlave = true;
-  // }
+  masterSlave = MASTER;
+
+  // Real version
+  if(masterSlave == MASTER){
+    state = GO_UNTIL_COLLIDE;
+  }else{
+    startedSlave = true;
+  }
 
   // Hard coded
-  masterSlave = MASTER;
-  state = GO_UNTIL_COLLIDE;
-
   previousState = HALT;
 
   // motor setup
@@ -264,6 +263,7 @@ void loop() {
   if(masterSlave == SLAVE){
     state = HALT;
     beSlave();
+    previousState = HALT;
     state = GO_UNTIL_COLLIDE;
     masterSlave = MASTER;
   }
@@ -883,8 +883,9 @@ void colorFound(int foundColor){
       return;
     }
   }
+  lightLED(foundColor);
 }
-
+// for tests
 void beMaster()
 {
   colorFound(RED_COLOR);
@@ -949,6 +950,7 @@ void beSlave() {
     
     if (isValid(m)){
       valid = true;  
+      delay(5000);//wait for them to back up
     }
   }
   return;
